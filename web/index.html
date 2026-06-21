@@ -3,58 +3,104 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>AsteroidHunter</title>
+<title>AsteroidHunter — Atari Asteroids as an RL arena</title>
+<meta name="description" content="Atari's 1979 Asteroids, rebuilt as a deterministic reinforcement-learning environment that runs in the browser via Pyodide. By Bijan Mehr." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <style>
-  :root { --phos: #ffffff; }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    margin: 0; width: 100%; height: 100%; background: #000; color: var(--phos);
-    font-family: "Courier New", monospace; overflow: hidden;
-    -webkit-user-select: none; user-select: none; touch-action: none;
-    overscroll-behavior: none;
-  }
-  /* canvas fills the whole viewport — no box, no letterbox */
-  #screen { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; background: #000; }
+  :root { --phos:#ffffff; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;width:100%;height:100%;background:#000;color:var(--phos);
+    font-family:"VT323","Courier New",monospace;overflow:hidden;
+    -webkit-user-select:none;user-select:none;touch-action:none;overscroll-behavior:none;}
+  a{color:inherit;}
+  #screen{position:fixed;inset:0;width:100vw;height:100vh;display:block;background:#000;}
 
-  #status {
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    letter-spacing: 2px; text-transform: uppercase; font-size: 14px; opacity: .85;
-    text-shadow: 0 0 8px var(--phos); pointer-events: none; z-index: 5;
-  }
-  #hint {
-    position: fixed; left: 0; right: 0; bottom: 10px; text-align: center;
-    font-size: 12px; letter-spacing: 1px; opacity: .45; text-transform: uppercase;
-    pointer-events: none; z-index: 5;
-  }
-  #hint b { color: var(--phos); opacity: .9; }
+  /* top bar shown during play */
+  #topbar{position:fixed;top:0;left:0;right:0;z-index:7;display:none;align-items:center;justify-content:space-between;
+    padding:max(10px,env(safe-area-inset-top)) 16px 12px;font-family:'Press Start 2P',monospace;font-size:9px;letter-spacing:1px;
+    background:linear-gradient(#000b,transparent);}
+  #topbar .brand{opacity:.8;} #topbar .brand b{font-weight:400;}
+  #topbar .links{display:flex;gap:16px;}
+  #topbar .links a{opacity:.55;cursor:pointer;text-decoration:none;}
+  #topbar .links a:hover{opacity:1;text-shadow:0 0 6px #fff;}
+  body.playing #topbar{display:flex;}
 
-  /* on-screen controls — shown on touch devices */
-  #pad { display: none; position: fixed; inset: auto 0 0 0; bottom: max(14px, env(safe-area-inset-bottom));
-         justify-content: space-between; padding: 0 18px; z-index: 6; }
-  #pad .group { display: flex; gap: 14px; align-items: flex-end; }
-  #pad button {
-    width: 72px; height: 72px; border-radius: 50%; background: rgba(255,255,255,.07);
-    border: 1px solid #555; color: var(--phos); font-size: 26px; font-family: inherit;
-    -webkit-user-select: none; user-select: none;
-  }
-  #pad button:active { background: rgba(255,255,255,.2); }
-  #restart {
-    position: fixed; top: max(10px, env(safe-area-inset-top)); right: 14px; z-index: 6;
-    display: none; background: rgba(255,255,255,.07); border: 1px solid #555;
-    color: var(--phos); font-family: inherit; font-size: 13px; letter-spacing: 1px;
-    padding: 8px 12px; border-radius: 6px; text-transform: uppercase;
-  }
-  @media (pointer: coarse) { #pad { display: flex; } #restart { display: block; } #hint { display: none; } }
+  #status{position:fixed;left:0;right:0;bottom:14px;text-align:center;font-family:'Press Start 2P',monospace;
+    font-size:9px;letter-spacing:1px;color:#e88;opacity:.9;pointer-events:none;z-index:9;}
+
+  #hint{position:fixed;left:0;right:0;bottom:10px;text-align:center;font-size:18px;letter-spacing:1px;opacity:.4;
+    text-transform:uppercase;pointer-events:none;z-index:5;display:none;}
+  #hint b{color:var(--phos);opacity:.9;}
+  body.playing #hint{display:block;}
+
+  /* touch controls */
+  #pad{display:none;position:fixed;inset:auto 0 0 0;bottom:max(14px,env(safe-area-inset-bottom));
+       justify-content:space-between;padding:0 18px;z-index:6;}
+  #pad .group{display:flex;gap:14px;align-items:flex-end;}
+  #pad button{width:72px;height:72px;border-radius:50%;background:rgba(255,255,255,.07);
+    border:1px solid #555;color:var(--phos);font-size:26px;font-family:inherit;}
+  #pad button:active{background:rgba(255,255,255,.2);}
+  @media(pointer:coarse){body.playing #pad{display:flex;}body.playing #hint{display:none;}}
+
+  /* ---- landing / title screen ---- */
+  #menu{position:fixed;inset:0;z-index:8;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:24px;background:radial-gradient(ellipse 75% 65% at 50% 42%,rgba(0,0,0,.5),rgba(0,0,0,.85));}
+  body.playing #menu{display:none;}
+  #menu .title{font-family:'Press Start 2P',monospace;font-size:clamp(20px,6vw,50px);line-height:1.3;margin:0;
+    letter-spacing:1px;text-shadow:0 0 20px rgba(255,255,255,.4);}
+  #menu .title span{display:block;font-size:.6em;opacity:.85;margin-top:.55em;}
+  #menu .tagline{max-width:44ch;color:#d7f3ff;opacity:.7;font-size:21px;margin:1.3rem 0 .2rem;line-height:1.3;}
+  #menu .tagline i{opacity:.9;}
+  #menu .prompt{font-family:'Press Start 2P',monospace;font-size:10px;letter-spacing:2px;opacity:.7;margin:1.7rem 0 1rem;text-transform:uppercase;}
+  #menu .prompt b{color:#fff;}
+  .diffs{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;}
+  .diff{background:rgba(255,255,255,.04);border:1px solid #444;border-radius:10px;color:#fff;cursor:pointer;
+    padding:15px 20px;min-width:148px;font-family:inherit;transition:.15s;display:flex;flex-direction:column;gap:7px;align-items:center;}
+  .diff:hover,.diff:focus{border-color:#fff;background:rgba(255,255,255,.12);transform:translateY(-2px);outline:none;box-shadow:0 0 18px rgba(255,255,255,.12);}
+  .diff b{font-family:'Press Start 2P',monospace;font-size:12px;letter-spacing:1px;}
+  .diff span{font-size:17px;opacity:.6;}
+  body.loading .diff{opacity:.35;pointer-events:none;}
+  .menu-foot{margin-top:2.3rem;font-size:18px;opacity:.55;letter-spacing:.5px;}
+  .menu-foot a{text-decoration:none;border-bottom:1px solid #555;}
+  .menu-foot a:hover{opacity:1;color:#fff;border-color:#fff;}
+  .menu-foot .nm{color:#fff;}
 </style>
 </head>
-<body>
+<body class="loading">
   <canvas id="screen"></canvas>
-  <div id="status">booting…</div>
-  <div id="hint">
-    <b>&larr; &rarr;</b> rotate &nbsp; <b>&uarr;</b> thrust &nbsp; <b>SPACE</b> fire &nbsp; <b>SHIFT</b> hyperspace &nbsp; <b>R</b> restart
+
+  <div id="topbar">
+    <span class="brand">ASTEROID<b>HUNTER</b></span>
+    <span class="links">
+      <a href="docs.html">DOCS</a>
+      <a href="https://github.com/bijanmehr/AsteroidHunter" target="_blank" rel="noopener">GITHUB</a>
+      <a data-action="menu">MENU</a>
+    </span>
   </div>
 
-  <button id="restart" data-action="restart">&#8635; new game</button>
+  <div id="menu">
+    <h1 class="title">ASTEROID<span>HUNTER</span></h1>
+    <p class="tagline">Atari's 1979 <i>Asteroids</i>, rebuilt as a deterministic reinforcement-learning arena — the same physics in your browser and in training.</p>
+    <p class="prompt" id="menuPrompt">Loading core&hellip;</p>
+    <div class="diffs">
+      <button class="diff" data-preset="rookie"><b>ROOKIE</b><span>5 lives · slow rocks</span></button>
+      <button class="diff" data-preset="pilot"><b>PILOT</b><span>3 lives · classic pace</span></button>
+      <button class="diff" data-preset="ace"><b>ACE</b><span>3 lives · fast · wave 3</span></button>
+    </div>
+    <div class="menu-foot">
+      <a href="docs.html">docs</a> &nbsp;·&nbsp;
+      <a href="https://github.com/bijanmehr/AsteroidHunter" target="_blank" rel="noopener">github</a> &nbsp;·&nbsp;
+      by <a class="nm" href="https://bijanmehr.github.io" target="_blank" rel="noopener">Bijan Mehr</a>
+    </div>
+  </div>
+
+  <div id="status"></div>
+  <div id="hint">
+    <b>&larr; &rarr;</b> rotate &nbsp; <b>&uarr;</b> thrust &nbsp; <b>SPACE</b> fire &nbsp; <b>SHIFT</b> hyperspace &nbsp; <b>R</b> menu
+  </div>
+
   <div id="pad">
     <div class="group">
       <button data-bit="LEFT" aria-label="rotate left">&#8634;</button>

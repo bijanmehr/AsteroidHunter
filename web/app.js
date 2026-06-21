@@ -1,5 +1,5 @@
 /* app.js — boots Pyodide, loads the pure-Python core, runs the fixed-timestep
- * loop, feeds input as one integer bitmask, and draws the returned buffer.
+ * loop, and drives the title screen / difficulty select / play / attract states.
  * The canvas fills the viewport; the world's aspect ratio matches the screen
  * (it's a torus), so there is no letterbox and no distortion, on any device.
  */
@@ -20,45 +20,50 @@
   const canvas = document.getElementById("screen");
   const ctx = canvas.getContext("2d");
   const statusEl = document.getElementById("status");
+  const menuPrompt = document.getElementById("menuPrompt");
   function setStatus(t) { if (statusEl) statusEl.textContent = t || ""; }
 
-  let browser = null, game = null, lastData = null, frame = 0;
-  let worldW = 4 / 3; // world width in units (H is always 1); = canvas aspect
+  let browser = null, game = null, demo = null, lastData = null, frame = 0;
+  let state = "menu";       // "menu" (attract) | "play"
+  let worldW = 4 / 3;       // world width in units (H is always 1) = canvas aspect
 
+  function setAspectAll() {
+    if (!browser) return;
+    if (game) browser.set_aspect(game, worldW);
+    if (demo) browser.set_aspect(demo, worldW);
+  }
   function resize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     worldW = canvas.width / canvas.height;
-    if (browser && game) browser.set_aspect(game, worldW);
-    if (lastData) Renderer.draw(ctx, lastData, worldW, 1, frame);
+    setAspectAll();
+    if (lastData) Renderer.draw(ctx, lastData, worldW, 1, frame, state === "menu");
   }
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", resize);
   resize();
 
   // ---- input -------------------------------------------------------------
-  let bits = 0;
-  let pendingHyper = false; // hyperspace is edge-triggered (one jump per press)
-  let pendingFire = false;  // keyboard fire is edge-triggered (one shot per press)
-  let wantRestart = false;
+  let bits = 0, pendingHyper = false, pendingFire = false, wantMenu = false;
   const KEYS = {
     ArrowLeft: BIT.LEFT, KeyA: BIT.LEFT,
     ArrowRight: BIT.RIGHT, KeyD: BIT.RIGHT,
     ArrowUp: BIT.THRUST, KeyW: BIT.THRUST,
   };
   window.addEventListener("keydown", (e) => {
+    if (state !== "play") return;
     if (e.code in KEYS) { bits |= KEYS[e.code]; e.preventDefault(); }
     if (e.code === "Space" && !e.repeat) { pendingFire = true; e.preventDefault(); }
     if ((e.code === "ShiftLeft" || e.code === "ShiftRight") && !e.repeat) { pendingHyper = true; e.preventDefault(); }
-    if (e.code === "KeyR") { wantRestart = true; e.preventDefault(); }
+    if (e.code === "KeyR") { wantMenu = true; e.preventDefault(); }
   });
   window.addEventListener("keyup", (e) => {
     if (e.code in KEYS) { bits &= ~KEYS[e.code]; e.preventDefault(); }
   });
 
-  document.querySelectorAll("[data-bit]").forEach((el) => {
+  document.querySelectorAll("#pad [data-bit]").forEach((el) => {
     const name = el.getAttribute("data-bit");
     if (name === "HYPER") {
       const pulse = (e) => { pendingHyper = true; e.preventDefault(); };
@@ -76,13 +81,14 @@
     el.addEventListener("mouseup", off);
     el.addEventListener("mouseleave", off);
   });
-  document.querySelectorAll('[data-action="restart"]').forEach((el) => {
-    const fn = (e) => { wantRestart = true; e.preventDefault(); };
-    el.addEventListener("touchstart", fn, { passive: false });
-    el.addEventListener("mousedown", fn);
+  document.querySelectorAll("[data-preset]").forEach((el) => {
+    el.addEventListener("click", () => startGame(el.getAttribute("data-preset")));
+  });
+  document.querySelectorAll('[data-action="menu"]').forEach((el) => {
+    el.addEventListener("click", (e) => { e.preventDefault(); wantMenu = true; });
   });
 
-  // ---- boot --------------------------------------------------------------
+  // ---- helpers -----------------------------------------------------------
   function readBuffer(retProxy) {
     const pb = retProxy.getBuffer("f64");
     const data = pb.data.slice();
@@ -90,18 +96,35 @@
     retProxy.destroy();
     return data;
   }
+  const seed = () => (Math.random() * 1e9) | 0;
 
-  function newGame() {
+  function startGame(preset) {
+    if (!browser) return;
     if (game) { game.destroy(); game = null; }
-    game = browser.new_game("pilot", (Math.random() * 1e9) | 0, 1, worldW);
+    game = browser.new_game(preset, seed(), 1, worldW);
     lastData = readBuffer(browser.render(game));
     frame = 0;
+    bits = 0; pendingFire = pendingHyper = wantMenu = false;
+    state = "play";
+    document.body.classList.add("playing");
+  }
+  function showMenu(score) {
+    state = "menu";
+    document.body.classList.remove("playing");
+    if (menuPrompt) {
+      menuPrompt.innerHTML = (score != null)
+        ? "Game over &middot; score <b>" + score + "</b> &mdash; play again"
+        : "Select difficulty";
+    }
+    ensureDemo();
+  }
+  function ensureDemo() {
+    if (!demo && browser) demo = browser.new_game("pilot", seed(), 1, worldW);
   }
 
+  // ---- boot --------------------------------------------------------------
   async function boot() {
-    setStatus("loading pyodide…");
     const pyodide = await loadPyodide();
-    setStatus("loading game core…");
     pyodide.FS.mkdirTree("/game/asteroidhunter/core");
     for (const f of PKG_FILES) {
       const res = await fetch(SRC_BASE + f);
@@ -110,23 +133,40 @@
     }
     pyodide.runPython("import sys; sys.path.insert(0, '/game')");
     browser = pyodide.pyimport("asteroidhunter.core.browser");
-    newGame();
-    setStatus("");
+
+    ensureDemo();
+    lastData = readBuffer(browser.render(demo));
+    document.body.classList.remove("loading");
+    if (menuPrompt) menuPrompt.textContent = "Select difficulty";
 
     let last = performance.now(), acc = 0;
     function loop(now) {
       acc = Math.min(MAX_ACC, acc + (now - last) / 1000);
       last = now;
-      if (wantRestart) { wantRestart = false; newGame(); acc = 0; }
-      while (acc >= STEP) {
-        const sbits = bits | (pendingHyper ? BIT.HYPER : 0) | (pendingFire ? BIT.FIRE : 0);
-        pendingHyper = false;
-        pendingFire = false;
-        lastData = readBuffer(browser.step(game, sbits));
-        acc -= STEP;
-        frame++;
+
+      if (state === "play") {
+        if (wantMenu) { wantMenu = false; showMenu(); }
+        else {
+          while (acc >= STEP) {
+            const sbits = bits | (pendingHyper ? BIT.HYPER : 0) | (pendingFire ? BIT.FIRE : 0);
+            pendingHyper = false; pendingFire = false;
+            lastData = readBuffer(browser.step(game, sbits));
+            acc -= STEP; frame++;
+          }
+          if (lastData && lastData[1] > 0.5) showMenu(lastData[0] | 0); // game over -> menu
+        }
       }
-      Renderer.draw(ctx, lastData, worldW, 1, frame);
+
+      if (state === "menu") {           // attract: drifting field behind the title
+        while (acc >= STEP) {
+          let d = readBuffer(browser.step(demo, 0));
+          if (d[1] > 0.5) { demo.destroy(); demo = browser.new_game("pilot", seed(), 1, worldW); d = readBuffer(browser.render(demo)); }
+          lastData = d; acc -= STEP; frame++;
+        }
+        Renderer.draw(ctx, lastData, worldW, 1, frame, true);
+      } else {
+        Renderer.draw(ctx, lastData, worldW, 1, frame, false);
+      }
       requestAnimationFrame(loop);
     }
     requestAnimationFrame(loop);
@@ -134,6 +174,7 @@
 
   boot().catch((err) => {
     console.error(err);
-    setStatus("error: " + err.message + " — open the console.");
+    setStatus("load error — open the console");
+    if (menuPrompt) menuPrompt.textContent = "failed to load :(";
   });
 })();

@@ -113,7 +113,7 @@
   }
 
   const Renderer = {
-    draw(ctx, buf, W, H, frame) {
+    draw(ctx, buf, W, H, frame, attract) {
       const cw = ctx.canvas.width, ch = ctx.canvas.height;
       const S = cw / W; // world->pixel (canvas matches world aspect, so no distortion)
       ctx.fillStyle = "#000";
@@ -134,6 +134,7 @@
 
       for (let i = HEADER; i + STRIDE <= buf.length; i += STRIDE) {
         const kind = buf[i] | 0;
+        if (attract && kind < 3) continue; // attract backdrop: drifting rocks only
         const x = buf[i + 1] * S, y = buf[i + 2] * S;
         const ang = buf[i + 3], r = buf[i + 4] * S, flags = buf[i + 5];
         if (kind === 0) {
@@ -146,16 +147,18 @@
       }
       ctx.restore();
 
-      ctx.save();
-      ctx.strokeStyle = PHOS;
-      ctx.fillStyle = PHOS;
-      ctx.lineJoin = "miter";
-      ctx.lineCap = "round";
-      ctx.shadowColor = PHOS;
-      ctx.shadowBlur = Math.max(1, ch * 0.003);
-      hud(ctx, cw, ch, score, wave, lives);
-      if (gameOver) center(ctx, cw, ch, "GAME OVER", "PRESS R TO PLAY AGAIN");
-      ctx.restore();
+      if (!attract) {
+        ctx.save();
+        ctx.strokeStyle = PHOS;
+        ctx.fillStyle = PHOS;
+        ctx.lineJoin = "miter";
+        ctx.lineCap = "round";
+        ctx.shadowColor = PHOS;
+        ctx.shadowBlur = Math.max(1, ch * 0.003);
+        hud(ctx, cw, ch, score, wave, lives);
+        if (gameOver) center(ctx, cw, ch, "GAME OVER", "PRESS R FOR MENU");
+        ctx.restore();
+      }
     },
   };
 
