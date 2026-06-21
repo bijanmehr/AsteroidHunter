@@ -11,16 +11,19 @@ One pure-Python, stdlib-only physics core is the single source of truth. It runs
 game you play and the environment an agent will train on are bit-for-bit the
 same simulation.
 
-## Play it locally
+## Play
 
+**Online:** <https://bijanmehr.github.io/AsteroidHunter/> · [manual](https://bijanmehr.github.io/AsteroidHunter/docs.html)
+
+**Locally:**
 ```bash
 bash scripts/serve.sh           # serves on :8000
-# open http://localhost:8000/web/
+# open http://localhost:8000/
 ```
 
 No build step — Pyodide loads the Python core straight from `src/`.
 
-**Controls:** ← → rotate · ↑ thrust · Space fire · Shift hyperspace · R restart.
+**Controls:** ← → rotate · ↑ thrust · Space fire · Shift hyperspace · R menu. Pick a difficulty (rookie / pilot / ace) on the title screen.
 
 ## Use the environment (optional)
 
@@ -50,7 +53,8 @@ src/asteroidhunter/
   config.py        constants + difficulty presets (rookie/pilot/ace)
   env.py           Gymnasium adapter (only file importing numpy/gymnasium)
   core/            pure-stdlib sim: physics · field · world · view · browser
-web/               Pyodide game shell: index.html · app.js · renderer.js · vectorfont.js
+index.html         the browser game, served at the repo root
+app.js · renderer.js · vectorfont.js · docs.html · favicon.svg
 docs/              design spec + interface contract
 ```
 

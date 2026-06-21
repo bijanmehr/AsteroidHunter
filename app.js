@@ -15,7 +15,7 @@
     "core/__init__.py", "core/physics.py", "core/field.py",
     "core/world.py", "core/view.py", "core/browser.py",
   ];
-  const SRC_BASE = "../src/asteroidhunter/"; // served from repo root, page at /web/
+  const SRC_BASE = "src/asteroidhunter/"; // page lives at repo root; src/ is a sibling
 
   const canvas = document.getElementById("screen");
   const ctx = canvas.getContext("2d");
