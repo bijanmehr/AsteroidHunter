@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Web build artifacts (wheel is built into web/assets by scripts/build_web.sh)
+web/assets/*.whl
+
+# OS / editor
+.DS_Store
+*.swp
