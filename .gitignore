@@ -17,3 +17,6 @@ web/assets/*.whl
 # OS / editor
 .DS_Store
 *.swp
+
+# Local tooling
+.claude/

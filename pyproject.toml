@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "asteroidhunter"
+version = "0.1.0"
+description = "Deterministic Atari Asteroids as a browser game + RL environment."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+env = ["gymnasium>=0.29", "numpy>=1.23"]
+marl = ["pettingzoo>=1.24"]   # deferred MARL roadmap
+dev = ["pytest>=7"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/asteroidhunter"]
